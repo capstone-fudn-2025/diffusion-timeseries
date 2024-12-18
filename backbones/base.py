@@ -8,8 +8,8 @@ class TripleB(nn.Module):
     Base Back Bone class for noise prediction models
     '''
 
-    @abstractmethod
-    def __init__(self, *args, **kwargs): ...
+    def __init__(self, *args, **kwargs):
+        super(TripleB, self).__init__(*args, **kwargs)
 
     @abstractmethod
     def forward(

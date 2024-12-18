@@ -1,21 +1,32 @@
 import torch
+import numpy.typing as npt
 from torch import nn
 from abc import abstractmethod
+from tqdm import tqdm
 from backbones.base import TripleB
 
 
 class BaseScheduler(nn.Module):
     '''
-    Base Scheduler for duffusion and denoising process
+    Base Scheduler for diffusion and denoising process
+
+    Args:
+        timesteps (int): Number of timesteps
+        device (str): Device to use (default: None)
+
+    Inputs:
+        backbone (TripleB): Backbone model for noise prediction
+        mask (torch.Tensor): Mask for protected regions. Include 0 for protected regions and 1 for unprotected regions
     '''
 
-    @abstractmethod
     def __init__(
         self,
         timesteps: int,
-        device: str = None
+        device: str = None,
+        trace_interval: int = 1,
+        **kwargs
     ):
-        super(BaseScheduler, self).__init__()
+        super(BaseScheduler, self).__init__(**kwargs)
         self.timesteps = timesteps
         self.device = device
 
@@ -23,9 +34,54 @@ class BaseScheduler(nn.Module):
         if self.device is None:
             self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    @abstractmethod
-    def denoise_diffusion(self, sample: torch.Tensor, timestep: int,
-                          pred_noise: torch.Tensor, add_noise: torch.Tensor) -> torch.Tensor: ...
+        # Tracing variables
+        self.trace_interval = trace_interval
+        self.trace_samples: list[npt.NDArray] = []
+
+    def iterate_timesteps(self):
+        return tqdm(range(self.timesteps, 0, -1), desc=f'{self.__class__.__name__}')
+
+    def is_saving_trace_sample(self, timestep: int) -> bool:
+        '''
+        Check if the current timestep is saving trace sample
+        - timestep (int): Current timestep
+        '''
+        return timestep % self.trace_interval == 0
+
+    def visualize_trace_samples(self):
+        '''
+        Visualize trace samples
+        '''
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(1, len(self.trace_samples),
+                               figsize=(5*len(self.trace_samples), 3))
+        for i, sample in enumerate(self.trace_samples):
+            ax[i].plot(sample.flatten())
+            ax[i].axis('off')
+            ax[i].set_title(f'Timestep {i * self.trace_interval}')
+        plt.show()
+        plt.close(fig)
 
     @abstractmethod
-    def forward(self, backbone: TripleB): ...
+    def denoise_diffusion(
+        self,
+        sample: torch.Tensor,
+        timestep: int,
+        pred_noise: torch.Tensor,
+        add_noise: torch.Tensor = None
+    ) -> torch.Tensor:
+        '''
+        Denoise and diffuse the sample
+        - sample (torch.Tensor): Input sample
+        - timestep (int): Current timestep
+        - pred_noise (torch.Tensor): Predicted noise
+        - add_noise (torch.Tensor): Additional noise
+        '''
+
+    @abstractmethod
+    def forward(self, backbone: TripleB, mask: torch.Tensor):
+        '''
+        Forward pass
+        - backbone (TripleB): Backbone model for noise prediction
+        - mask (torch.Tensor): Mask for protected regions. Include 0 for protected regions and 1 for unprotected regions
+        '''
