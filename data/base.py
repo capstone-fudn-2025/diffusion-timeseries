@@ -17,6 +17,8 @@ class SimulationDataset(BaseModel):
                                           description='The dataset with missing values')
     missing_indices: tuple[int, int] = Field(...,
                                              description='The indices of missing values')
+    imputed_dataset: pd.DataFrame = Field(None,
+                                          description='The dataset with imputed values')
 
     def __len__(self):
         return len(self.dataset)
@@ -184,33 +186,54 @@ class BaseTimeSeriesData:
              2:self.config.window_size // 2 + self.config.missing_size // 2] = 1
         return window, mask
 
-    def merge_results(self, results: torch.Tensor) -> pd.DataFrame:
+    def merge_result(self, result: torch.Tensor) -> pd.DataFrame:
         '''
         Merge the results into the dataset
         '''
         # Create a copy of the dataset
-        dataset = self.data.missing_dataset.copy()
+        imputed_dataset = self.data.missing_dataset.copy()
+
+        missing_begin_index = (
+            self.data.missing_indices[0] + self.data.missing_indices[1]) // 2 - (self.config.missing_size // 2)
+        missing_begin_index_in_output = self.config.window_size // 2 - \
+            self.config.missing_size // 2
 
         # Merge the results
-        dataset.iloc[self.data.missing_indices[0]:self.data.missing_indices[1]] = results
+        result = result[:, :, missing_begin_index_in_output:missing_begin_index_in_output +
+                        self.config.missing_size].detach().cpu().numpy().reshape(-1, 1)
+        imputed_dataset.iloc[missing_begin_index:missing_begin_index +
+                             self.config.missing_size] = result
 
-        return dataset
+        self.data.imputed_dataset = imputed_dataset
+        return imputed_dataset
 
     def visualize(self):
         import matplotlib.pyplot as plt
 
-        fig, ax = plt.subplots(3, 1, figsize=(15, 9))
+        fig, ax = plt.subplots(
+            4 if self.data.imputed_dataset is not None else 3, 1, figsize=(15, 12))
+
+        # Plot the original dataset
         ax[0].plot(self.data.dataset.to_numpy(), label='Original')
         ax[0].set_title('Original Dataset')
         ax[0].legend()
 
+        # Plot the processed dataset
         ax[1].plot(self.data.processed_dataset.to_numpy(), label='Processed')
         ax[1].set_title('Processed Dataset')
         ax[1].legend()
 
+        # Plot the missing dataset
         ax[2].plot(self.data.missing_dataset.to_numpy(), label='Missing')
         ax[2].set_title('Missing Dataset')
         ax[2].legend()
+
+        # Plot the imputed dataset
+        if self.data.imputed_dataset is not None:
+            ax[3].plot(self.data.imputed_dataset.to_numpy(),
+                       label='Imputed', color='orange')
+            ax[3].set_title('Imputed Dataset')
+            ax[3].legend()
 
         plt.tight_layout()
         plt.show()

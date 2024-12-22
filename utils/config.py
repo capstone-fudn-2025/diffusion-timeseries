@@ -1,4 +1,4 @@
-from typing import Literal, Any
+from typing import Literal, Any, Union
 from pydantic import BaseModel, Field
 import numpy as np
 import torch
@@ -20,7 +20,7 @@ class GlobalConfig(BaseModel):
     # General configs
     seed: int = Field(
         default_factory=get_random_seed, description='The random seed to use for reproducibility')
-    device: torch.device = Field(
+    device: Union[torch.device, str] = Field(
         default_factory=get_available_device, description='The device to use for training')
     dtype: torch.dtype = Field(torch.float32,
                                description='The data type to use for training')
@@ -58,6 +58,10 @@ class GlobalConfig(BaseModel):
         None, description='The path to save the model checkpoints')
     save_interval: int = Field(
         4, description='The interval to save the model checkpoints')
+    use_early_stopping: bool = Field(
+        True, description='Whether to use early stopping')
+    early_stopping_patience: int = Field(
+        10, description='The patience for early stopping')
 
     # Loss function configs
     loss_function_config: dict = Field(
