@@ -109,8 +109,14 @@ class Trainer:
                            f"{self.config.save_path}/{self.model.__class__.__name__}_{epoch+1}.pt")
                 print(f"📦 Model saved at epoch {epoch+1}")
 
+            # Early stopping
+            if self.config.use_early_stopping and max(self.losses[-self.config.early_stopping_patience:]) == self.losses[-1]:
+                print(
+                    f"🛑 Early stopping at epoch {epoch+1} due to no improvement in loss")
+                break
+
         print(
-            f"🏁 Training process complete at {round(time.perf_counter() - _s, 4)}s")
+            f"🏁 Training process complete at {round(time.perf_counter() - _s, 2)}s")
         self.model.eval()
 
     def visualize_history(self, clear: bool = True):
