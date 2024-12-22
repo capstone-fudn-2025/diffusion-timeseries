@@ -1,9 +1,10 @@
-import torch
-import numpy.typing as npt
-from torch import nn
 from abc import abstractmethod
+import numpy.typing as npt
+import torch
+from torch import nn
 from tqdm import tqdm
 from backbones.base import TripleB
+from utils.config import GlobalConfig
 
 
 class BaseScheduler(nn.Module):
@@ -19,38 +20,27 @@ class BaseScheduler(nn.Module):
         mask (torch.Tensor): Mask for protected regions. Include 0 for protected regions and 1 for unprotected regions
     '''
 
-    def __init__(
-        self,
-        timesteps: int,
-        device: str = None,
-        trace_interval: int = 1,
-        **kwargs
-    ):
-        super(BaseScheduler, self).__init__(**kwargs)
-        self.timesteps = timesteps
-        self.device = device
-
-        # Initialize device
-        if self.device is None:
-            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    def __init__(self, config: GlobalConfig):
+        self.config = config
+        super(BaseScheduler, self).__init__()
 
         # Tracing variables
-        self.trace_interval = trace_interval
-        self.trace_samples: list[npt.NDArray] = []
+        self.trace_samples: list[npt.ArrayLike] = []
 
     def iterate_timesteps(self):
-        return tqdm(range(self.timesteps, 0, -1), desc=f'{self.__class__.__name__}')
+        return tqdm(range(self.config.timesteps, 0, -1), desc=f'{self.__class__.__name__}')
 
     def is_saving_trace_sample(self, timestep: int) -> bool:
         '''
         Check if the current timestep is saving trace sample
         - timestep (int): Current timestep
         '''
-        return timestep % self.trace_interval == 0
+        return timestep % self.config.trace_interval == 0 or timestep == 1
 
-    def visualize_trace_samples(self):
+    def visualize_trace_samples(self, clear: bool = True):
         '''
         Visualize trace samples
+        - clear (bool): Clear the trace samples after visualization (default: True)
         '''
         import matplotlib.pyplot as plt
         fig, ax = plt.subplots(1, len(self.trace_samples),
@@ -58,9 +48,12 @@ class BaseScheduler(nn.Module):
         for i, sample in enumerate(self.trace_samples):
             ax[i].plot(sample.flatten())
             ax[i].axis('off')
-            ax[i].set_title(f'Timestep {i * self.trace_interval}')
+            ax[i].set_title(f'Timestep {i * self.config.trace_interval}')
+        plt.tight_layout()
         plt.show()
         plt.close(fig)
+        if clear:
+            self.trace_samples = []
 
     @abstractmethod
     def denoise_diffusion(
@@ -77,6 +70,24 @@ class BaseScheduler(nn.Module):
         - pred_noise (torch.Tensor): Predicted noise
         - add_noise (torch.Tensor): Additional noise
         '''
+        raise NotImplementedError(
+            "Method 'denoise_diffusion' must be implemented")
+
+    @abstractmethod
+    def training_diffusion(
+        self,
+        sample: torch.Tensor,
+        timestep: int,
+        noise: torch.Tensor,
+    ) -> torch.Tensor:
+        '''
+        Add noise to the sample and train the diffusion process
+        - sample (torch.Tensor): Input sample
+        - timestep (int): Current timestep
+        - noise (torch.Tensor): Noise tensor
+        '''
+        raise NotImplementedError(
+            "Method 'training_diffusion' must be implemented")
 
     @abstractmethod
     def forward(self, backbone: TripleB, mask: torch.Tensor):
@@ -85,3 +96,4 @@ class BaseScheduler(nn.Module):
         - backbone (TripleB): Backbone model for noise prediction
         - mask (torch.Tensor): Mask for protected regions. Include 0 for protected regions and 1 for unprotected regions
         '''
+        raise NotImplementedError("Method 'forward' must be implemented")

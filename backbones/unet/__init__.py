@@ -1,16 +1,12 @@
 import torch
+from torch import nn
 from backbones.base import TripleB
-from .components import *
+from .components import ResidualConvBlock, UnetDown, UnetUp, EmbedFC
 
 
 class Unet(TripleB):
     '''
     Unet Backbone for noise prediction.
-
-    Args:
-        in_channels (int): number of input channels
-        n_features (int): number of intermediate feature maps
-        n_context_features (int): number of context features
 
     Shape:
         Input:
@@ -26,29 +22,25 @@ class Unet(TripleB):
     - n_context_features: number of context features
     '''
 
-    def __init__(
-        self,
-        in_channels: int,
-        n_features: int = 256,
-        n_context_features: int = 10
-    ):
-        super(Unet, self).__init__()
+    def __init__(self, config):
+        super(Unet, self).__init__(config)
 
         # Set the number of input channels, intermediate feature maps, and context features
-        self.in_channels = in_channels
-        self.n_features = n_features
-        self.n_context_features = n_context_features
+        self.in_channels = self.config.backbone_config.get('in_channels', 1)
+        self.n_features = self.config.backbone_config.get('n_features', 64)
+        self.n_context_features = self.config.backbone_config.get(
+            'n_context_features', 1)
 
         # Initialize the initial convolutional layer
         # Shape: (n, in_channels, l) -> (n, n_features, l)
         self.init_conv = ResidualConvBlock(
-            in_channels, n_features, is_res=True)
+            self.in_channels, self.n_features, is_res=True)
 
         # Initialize the down-sampling path of the U-Net with two levels
         # Shape: (n, n_features, l) -> (n, n_features, l / 2)
-        self.down1 = UnetDown(n_features, n_features)
+        self.down1 = UnetDown(self.n_features, self.n_features)
         # Shape: (n, n_features, l / 2) -> (n, 2 * n_features, l / 4)
-        self.down2 = UnetDown(n_features, 2 * n_features)
+        self.down2 = UnetDown(self.n_features, 2 * self.n_features)
 
         # Convert the feature maps to a vector and apply an activation
         to_vec_layers = [
@@ -62,47 +54,48 @@ class Unet(TripleB):
 
         # Embed the timestep and context labels with a one-layer fully connected neural network
         # Shape: (n, 1, 1) -> (n, 2 * n_features)
-        self.timeembed1 = EmbedFC(1, 2 * n_features)
+        self.timeembed1 = EmbedFC(1, 2 * self.n_features)
 
         # Shape: (n, 1, 1) -> (n, n_features)
-        self.timeembed2 = EmbedFC(1, n_features)
+        self.timeembed2 = EmbedFC(1, self.n_features)
 
         # Shape: (n, n_context_features) -> (n, 2 * n_features)
-        self.contextembed1 = EmbedFC(n_context_features, 2 * n_features)
+        self.contextembed1 = EmbedFC(
+            self.n_context_features, 2 * self.n_features)
 
         # Shape: (n, n_context_features) -> (n, n_features)
-        self.contextembed2 = EmbedFC(n_context_features, n_features)
+        self.contextembed2 = EmbedFC(self.n_context_features, self.n_features)
 
         # Initialize the up-sampling path of the U-Net with three levels
         up_layers = [
             # Shape: (n, 2 * n_features, l / 16) -> (n, 2 * n_features, l / 4)
-            nn.ConvTranspose1d(2 * n_features, 2 * n_features,
+            nn.ConvTranspose1d(2 * self.n_features, 2 * self.n_features,
                                kernel_size=4, stride=4),
-            nn.GroupNorm(8, 2 * n_features),
+            nn.GroupNorm(8, 2 * self.n_features),
             nn.ReLU()
         ]
         self.up0 = nn.Sequential(*up_layers)
 
         # Shape: (n, 4 * n_features, l / 4) -> (n, n_features, l / 2).
         # The input is the concatenation of the upsampled feature maps and skip connections from the down-sampling path
-        self.up1 = UnetUp(4 * n_features, n_features)
+        self.up1 = UnetUp(4 * self.n_features, self.n_features)
 
         # Shape: (n, 2 * n_features, l / 2) -> (n, n_features, l).
         # The input is the concatenation of the upsampled feature maps and skip connections from the down-sampling path
-        self.up2 = UnetUp(2 * n_features, n_features)
+        self.up2 = UnetUp(2 * self.n_features, self.n_features)
 
         # Initialize the final convolutional layers to map to the same number of channels as the input image
         out_layers = [
             # Shape: (n, 2 * n_features, l) -> (n, n_features, l)
-            nn.Conv1d(2 * n_features, n_features,
+            nn.Conv1d(2 * self.n_features, self.n_features,
                       kernel_size=3, stride=1, padding=1),
 
-            nn.GroupNorm(8, n_features),
+            nn.GroupNorm(8, self.n_features),
 
             nn.ReLU(),
 
             # Shape: (n, n_features, l) -> (n, in_channels, l)
-            nn.Conv1d(n_features, in_channels,
+            nn.Conv1d(self.n_features, self.in_channels,
                       kernel_size=3, stride=1, padding=1),
         ]
         self.out = nn.Sequential(*out_layers)

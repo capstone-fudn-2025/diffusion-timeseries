@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from abc import abstractmethod
+from utils.config import GlobalConfig
 
 
 class TripleB(nn.Module):
@@ -8,8 +9,9 @@ class TripleB(nn.Module):
     Base Back Bone class for noise prediction models
     '''
 
-    def __init__(self, *args, **kwargs):
-        super(TripleB, self).__init__(*args, **kwargs)
+    def __init__(self, config: GlobalConfig):
+        self.config = config
+        super(TripleB, self).__init__()
 
     @abstractmethod
     def forward(
@@ -27,3 +29,4 @@ class TripleB(nn.Module):
         Returns:
             torch.Tensor: Output tensor. Shape (N, C, L)
         '''
+        raise NotImplementedError('Forward method must be implemented')
